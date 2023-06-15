@@ -1,4 +1,7 @@
 using DiskStationManager.SecureShell;
+using Renci.SshNet;
+using System.Net.Http.Headers;
+using System.Numerics;
 using System.Security.Cryptography;
 
 using static System.Configuration.UserSectionHandler;
@@ -9,43 +12,103 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
     internal static class Program
     {
+        private static void SetProfile(Queue<string> cmdLine)
+        {
+            bool fail = false;
+            while (cmdLine.Count > 0 && fail == false)
+            {
+                if (cmdLine.TryPeek(out string? option))
+                {
+                    _ = cmdLine.Dequeue();
+                    switch (option)
+                    {
+                        case "host":
+                            OpenVPNConfiguration.Profile.OpenVPNServer.Host = cmdLine.Dequeue(); break;
+                        case "port":
+                            OpenVPNConfiguration.Profile.OpenVPNServer.Port = int.Parse(cmdLine.Dequeue()); break;
+                        case "user":
+                            OpenVPNConfiguration.Profile.OpenVPNServer.UserName = cmdLine.Dequeue(); break;
+                        case "continue":
+                            return;
+                        case "pass":
+                            var input = OpenVPNConfiguration.Profile.OpenVPNServer.GetOrAddAuthenticationMethod(DSMAuthenticationMethod.Password);
+                            //System.Console.WriteLine($"Please enter the password for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}:");
+                            //string text = System.Console.ReadLine();
+                            input.Password = cmdLine.Dequeue(); 
+                            break;
+                        case "reset":
+                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.None);
+                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.KeyboardInteractive);
+                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.Password);
+                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.PrivateKeyFile);
+                            break;
+                        case "list":
+                            System.Console.WriteLine($"Authentication methods in profile for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}@{OpenVPNConfiguration.Profile.OpenVPNServer.Host}:");
+                            foreach (var method in OpenVPNConfiguration.Profile.OpenVPNServer.AuthenticationMethods)
+                            {
+                                Console.WriteLine(method.Method);
+                            }
+                            break;
+                        case "save":
+                            OpenVPNConfiguration.Profile.Save();
+                            break;
+                        default:
+                            fail = true;
+                            break;
+                    }
+                }
+                else
+                {
+                    fail = true;
+
+                }
+            }
+            if (fail)
+            {
+                Console.WriteLine("Failed to parse your profile command.");
+                Environment.Exit(-1);
+            }
+        }
         /// <summary>
         ///  The main entry point for the application.
         /// </summary>
         [STAThread]
         static void Main(string[] args)
         {
-            bool oneTimeVector = false;
-            string vector = string.Empty;
             DirectoryInfo workFolder = new DirectoryInfo(Environment.CurrentDirectory);
 
+            string entropy = string.IsNullOrWhiteSpace(Default.DPAPIVector)
+                ? "synologyforums"
+                : GetEntropy(Default.DPAPIVector);
+
+            try { _ = ReadConfiguration(entropy); } catch { }
+            
             try
             {
-                var cmdline = new Queue<string>(args);
-                while (cmdline.Count > 0)
+                var cmdLine = new Queue<string>(args);
+                while (cmdLine.Count > 0)
                 {
-                    if (cmdline.TryPeek(out string? option))
+                    if (cmdLine.TryPeek(out string? option))
                     {
                         switch (option)
                         {
                             case "e":
-                                _ = cmdline.Dequeue();
-                                vector = cmdline.Dequeue();
-                                oneTimeVector = true;
+                                _ = cmdLine.Dequeue();
+                                entropy = cmdLine.Dequeue();
+                                try { _ = ReadConfiguration(entropy); } catch { }
                                 break;
                             case "profile":
-                                _ = cmdline.Dequeue();
+                                _ = cmdLine.Dequeue();
+                                SetProfile(cmdLine);
                                 break;
                             default:
-                                workFolder = new DirectoryInfo(cmdline.Dequeue());
+                                workFolder = new DirectoryInfo(cmdLine.Dequeue());
                                 break;
                         }
                     }
                 }
 
-                string entropy = string.IsNullOrWhiteSpace(Default.DPAPIVector)
-                    ? "synologyforums"
-                    : GetEntropy(oneTimeVector ? vector : Default.DPAPIVector);
+
 
                 _ = ReadConfiguration(entropy);
 
@@ -57,29 +120,9 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 System.Console.WriteLine(ex);
             }
 
-            //        var serverCertificatesLocation = new DirectoryInfo(Path.Combine(workLocation.FullName, "Certificates", "Server"));
-            //        var templatesLocation = new DirectoryInfo(Path.Combine(workLocation.FullName, "Templates"));
-
-            //        var serverTemplate = new FileInfo(Path.Combine(templatesLocation.FullName, "openvpn.conf"));
-            //        var clientTemplate = new FileInfo(Path.Combine(templatesLocation.FullName, "openvpn.ovpn"));
-            //        const string appArmour = "/usr/syno/etc.defaults/rc.sysv/apparmor.sh";
-
-            //        var test = new ConfigParser(serverTemplate);
 
 
 
-            //        //config.OpenVPNServer.FingerPrint = new byte[] { };
-            //        //config.OpenVPNServer.Host = "diskstation";
-            //        //config.OpenVPNServer.UserName = "admsander";
-            //        //config.OpenVPNServer.Port = 7135;
-            //        //config.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.None);
-            //        //config.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.KeyboardInteractive);
-            //        //config.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.Password);
-            //        //config.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.PrivateKeyFile);
-
-            //        //var k = config.OpenVPNServer.GetOrAddAuthenticationMethod(DSMAuthenticationMethod.Password);
-
-            //        //config.Save();
         }
         internal static OpenVPNConfiguration ReadConfiguration(string entropy)
         {
