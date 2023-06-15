@@ -32,15 +32,36 @@ namespace VPNCenter.OpenVPN.PackageConfig
                             return;
                         case "pass":
                             var input = OpenVPNConfiguration.Profile.OpenVPNServer.GetOrAddAuthenticationMethod(DSMAuthenticationMethod.Password);
-                            //System.Console.WriteLine($"Please enter the password for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}:");
-                            //string text = System.Console.ReadLine();
-                            input.Password = cmdLine.Dequeue(); 
+                            System.Console.WriteLine($"Please enter the password for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}:");
+                            var pass = string.Empty;
+                            ConsoleKey key;
+                            do
+                            {
+                                var keyInfo = Console.ReadKey(intercept: true);
+                                key = keyInfo.Key;
+
+                                if (key == ConsoleKey.Backspace && pass.Length > 0)
+                                {
+                                    Console.Write("\b \b");
+                                    pass = pass[0..^1];
+                                }
+                                else if (!char.IsControl(keyInfo.KeyChar))
+                                {
+                                    Console.Write("*");
+                                    pass += keyInfo.KeyChar;
+                                }
+                            } while (key != ConsoleKey.Enter);
+                            Console.WriteLine();
+                            input.Password = pass; 
                             break;
                         case "reset":
                             OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.None);
                             OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.KeyboardInteractive);
                             OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.Password);
                             OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.PrivateKeyFile);
+                            OpenVPNConfiguration.Profile.OpenVPNServer.Port = 22;
+                            OpenVPNConfiguration.Profile.OpenVPNServer.Host = string.Empty;
+                            OpenVPNConfiguration.Profile.OpenVPNServer.UserName = string.Empty;
                             break;
                         case "list":
                             System.Console.WriteLine($"Authentication methods in profile for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}@{OpenVPNConfiguration.Profile.OpenVPNServer.Host}:");
@@ -113,7 +134,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 _ = ReadConfiguration(entropy);
 
 
-                PushConfiguration.PushFromProfile(new DirectoryInfo(@"C:\Users\Sander\Desktop\openvpn\"));
+                PushConfiguration.PushFromProfile(workFolder);
             }
             catch (Exception ex)
             {
