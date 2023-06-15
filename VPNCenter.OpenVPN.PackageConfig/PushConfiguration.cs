@@ -18,10 +18,17 @@ namespace VPNCenter.OpenVPN.PackageConfig
         internal static void PushFromProfile(DirectoryInfo workLocation)
         {
             var serverCertificatesLocation = new DirectoryInfo(Path.Combine(workLocation.FullName, "Certificates", "Server"));
+            var clientCertificatesLocation = new DirectoryInfo(Path.Combine(workLocation.FullName, "Certificates", "Users"));
             var templatesLocation = new DirectoryInfo(Path.Combine(workLocation.FullName, "Templates"));
 
             var serverTemplate = new FileInfo(Path.Combine(templatesLocation.FullName, "openvpn.conf"));
             var clientTemplate = new FileInfo(Path.Combine(templatesLocation.FullName, "openvpn.ovpn"));
+
+            if (serverCertificatesLocation.Exists == false) throw new FileNotFoundException($"Expecting a subfolder ./Certificates/Server in {workLocation.FullName}");
+            if (clientCertificatesLocation.Exists == false) throw new FileNotFoundException($"Expecting a subfolder ./Certificates/Client in {workLocation.FullName}");
+            if (serverTemplate.Exists == false) throw new FileNotFoundException($"Expecting ./Templates/openvpn.conf in {workLocation.FullName}");
+            if (clientTemplate.Exists == false) throw new FileNotFoundException($"Expecting ./Templates/openvpn.ovpn in {workLocation.FullName}");
+
             const string appArmour = "/usr/syno/etc.defaults/rc.sysv/apparmor.sh";
 
             var test = new ConfigParser(serverTemplate);
@@ -43,20 +50,21 @@ namespace VPNCenter.OpenVPN.PackageConfig
             var tlsAuthKey = new FileInfo(Path.Combine(serverCertificatesLocation.FullName, "ta.key"));
 
             session.ClientExecute(sc =>
+            {
+                sc.Connect();
+                var console = session.GetConsole(sc);
+                packageFiles.AddRange(console.GetDirectoryContentsRecursive(sc, varpackages + "/", ".", false)
+                                    .Where(p => p.Folder.StartsWith("/./VPNCenter/")));
+
+                mgt = packageFiles.SingleOrDefault(f => f.FileName.Contains("start-stop-status"));
+
+                if (mgt != null)
                 {
-                    sc.Connect();
-                    var console = session.GetConsole(sc);
-                    packageFiles.AddRange(console.GetDirectoryContentsRecursive(sc, varpackages + "/", ".", false)
-                                       .Where(p => p.Folder.StartsWith("/./VPNCenter/")));
+                    etcFiles.AddRange(console.GetDirectoryContentsRecursive(sc, etcpackages + "/"));
+                    ta_key = etcFiles.SingleOrDefault(f => f.FileName.Contains("ta.key"));
+                }
+            });
 
-                    mgt = packageFiles.SingleOrDefault(f => f.FileName.Contains("start-stop-status"));
-
-                    if (mgt != null)
-                    {
-                        etcFiles.AddRange(console.GetDirectoryContentsRecursive(sc, etcpackages + "/"));
-                        ta_key = etcFiles.SingleOrDefault(f => f.FileName.Contains("ta.key"));
-                    }
-                });
             if (mgt is null)
             {
                 System.Console.WriteLine("VPNCenter is not installed?");
@@ -77,9 +85,9 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 });
 
                 var createFolders = new List<string>
-    {
-        $"mkdir {tmpFolder}",
-                $"chown -R {session.ConnectionInfo.Username} {tmpFolder}"
+                {
+                    $"mkdir {tmpFolder}",
+                    $"chown -R {session.ConnectionInfo.Username} {tmpFolder}"
                 };
 
                 if (etcFiles.Where(p => p.Folder.Equals(vpnCertificates)).Any() == false)
@@ -110,7 +118,8 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 "tar -zcf ~/VPNCenter.openvpn.tar.gz etc",
                 $"cd {tmpFolder}",
                 "tar -xf ~/VPNCenter.openvpn.tar.gz",
-        "cd ~",
+                "rm ~/VPNCenter.openvpn.tar.gz",
+                 "cd ~",
                 $"chown -R {session.ConnectionInfo.Username} {tmpFolder}",
                 $"chmod -R 711 {tmpFolder}"
                 });
@@ -143,24 +152,27 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
                 installFiles.AddRange(new string[]
                 {
-                "cd ~",
-                $"rm -r {tmpFolder}"
+                    "cd ~",
+                    $"rm -r {tmpFolder}"
                 });
 
                 checkVPNCenter.Run(installFiles.ToArray());
 
                 checkVPNCenter.Run(new string[]
                 {
-                $"synopkg start {vpnCenter}",
-                "cat /var/log/openvpn.log"
-                }
-                );
+                    $"synopkg start {vpnCenter}",
+                    "cat /var/log/openvpn.log"
+                });
 
-                var inline = new ClientConfigParser(clientTemplate, "sander");
-                using (var sw = new StreamWriter(Path.Combine(workLocation.FullName, "sander.ovpn")))
+                foreach (var file in clientCertificatesLocation.GetFiles().Where(cert => cert.Extension == ".crt"))
                 {
-                    inline.RenderInline(sw);
-                };
+                    string user = Path.GetFileNameWithoutExtension(file.FullName);
+                    var inline = new ClientConfigParser(clientTemplate, user);
+                    using (var sw = new StreamWriter(Path.Combine(workLocation.FullName, $"{user}.ovpn")))
+                    {
+                        inline.RenderInline(sw);
+                    };
+                }
             }
             catch (Exception ex)
             {
