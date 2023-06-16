@@ -33,6 +33,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
             var test = new ConfigParser(serverTemplate);
 
+            DSMSession.ConsoleUI = true;
             DSMSession session = new DSMSession(Profile.OpenVPNServer, Session_HostKeyChange);
             const string vpnCenter = "VPNCenter";
             const string varpackages = "/var/packages";
@@ -51,8 +52,11 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
             session.ClientExecute(sc =>
             {
+                Console.WriteLine($"Starting SSH session for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}@{OpenVPNConfiguration.Profile.OpenVPNServer.Host} ...");
                 sc.Connect();
                 var console = session.GetConsole(sc);
+                Console.WriteLine($"{OpenVPNConfiguration.Profile.OpenVPNServer.Host}: {console.GetVersionInfo().Version}");
+
                 packageFiles.AddRange(console.GetDirectoryContentsRecursive(sc, varpackages + "/", ".", false)
                                     .Where(p => p.Folder.StartsWith("/./VPNCenter/")));
 
@@ -78,6 +82,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
             var checkVPNCenter = new SudoSession(session);
             try
             {
+                Console.WriteLine("Stopping package ...");
                 checkVPNCenter.Run(new string[]
                 {
                     $"{appArmour} stop",
@@ -98,6 +103,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
                 if (ta_key is null)
                 {
+                    Console.WriteLine("Generating new tls-auth key ...");
                     checkVPNCenter.Run(new string[]
                     {
                     $"cd {etcpackages}{vpnCertificates}",
@@ -125,7 +131,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 });
 
                 var installFiles = new List<string>();
-
+                Console.WriteLine("Exchanging certificates ...");
                 session.ClientExecute(cp =>
                 {
                     cp.Connect();
@@ -146,7 +152,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
                         session.DownloadFile(cp, $"{tmpFolder}/ta.key", tlsAuthKey);
                     }
                 });
-
+                Console.WriteLine("Writing server configuration ...");
                 PlaceFile(installFiles, $"{tmpFolder}/etc/openvpn/openvpn.conf.user", $"{etcpackages}/openvpn/openvpn.conf.user");
                 PlaceFile(installFiles, $"{tmpFolder}/etc/openvpn/openvpn.conf.user", $"{etcpackages}/openvpn/openvpn.conf");
 
@@ -157,13 +163,13 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 });
 
                 checkVPNCenter.Run(installFiles.ToArray());
-
+                Console.WriteLine("Starting package ...");
                 checkVPNCenter.Run(new string[]
                 {
                     $"synopkg start {vpnCenter}",
                     "cat /var/log/openvpn.log"
                 });
-
+                Console.WriteLine("Writing client profiles ...");
                 foreach (var file in clientCertificatesLocation.GetFiles().Where(cert => cert.Extension == ".crt"))
                 {
                     string user = Path.GetFileNameWithoutExtension(file.FullName);
