@@ -9,12 +9,12 @@ namespace VPNCenter.OpenVPN.PackageConfig
 {
     internal class VPNCenterConfiguration
     {
-        public VPNCenterPortConfiguration PortConfiguration => _portConfiguration["vpn_server_openvpn"];
+        public ProtocolPort PortConfiguration => _portConfiguration["vpn_server_openvpn"].DestinationPorts.SingleOrDefault();
 
         private readonly Dictionary<string, VPNCenterPortConfiguration> _portConfiguration;
         private readonly Dictionary<string, string> _confValues = new Dictionary<string, string>();
-        public static VPNCenterConfiguration ReadConfiguration(DSMSession session, string path) => new VPNCenterConfiguration(session, path);
-        private VPNCenterConfiguration(DSMSession session, string path)
+        public static VPNCenterConfiguration PrepareConfiguration(ClientSideFiles local, DSMSession session, string path) => new VPNCenterConfiguration(local, session, path);
+        private VPNCenterConfiguration(ClientSideFiles local, DSMSession session, string path)
         {
             using (var stream = session.DownloadFile($"{path}/synovpn_port"))
             {
@@ -38,7 +38,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     }
                 }
             }
+            new ServerConfigParser(local.ServerTemplateConfiguration,PortConfiguration).Write(local.ServerConfigurationUser);
         }
-
     }
 }

@@ -5,14 +5,16 @@ namespace VPNCenter.OpenVPN.PackageConfig
     internal class ClientConfigParser
     {
         private readonly List<string> config = new List<string>();
-        private readonly DirectoryInfo root;
+       
         private static readonly Regex regexFile = new Regex(@"^(?<key>\S+)\s+(?<file>\S+)\s?.*$", RegexOptions.Compiled);
-        public ClientConfigParser(FileInfo clientTemplate, string userName, ProtocolPort portDefinition)
+        private readonly ClientSideFiles _local;
+        private readonly DirectoryInfo _root;
+        public ClientConfigParser(ClientSideFiles local, string userName, ProtocolPort portDefinition)
         {
+            _local = local;
+            _root = local.ClientTemplateConfiguration.Directory;
 
-            root = clientTemplate.Directory;
-
-            using (var sr = new StreamReader(clientTemplate.FullName))
+            using (var sr = new StreamReader(local.ClientTemplateConfiguration.FullName))
             {
                 while (sr.EndOfStream == false)
                 {
@@ -28,24 +30,15 @@ namespace VPNCenter.OpenVPN.PackageConfig
         {
             AddInlineCertificate(document, match.Groups["key"].Value, match.Groups["file"].Value);
         }
-        private FileInfo FindCertificate(DirectoryInfo root, string file)
+        private FileInfo FindCertificate(string file)
         {
             var paths = new List<DirectoryInfo>()
             {
-                new DirectoryInfo(Path.Combine(root.Parent.FullName,"Certificates","Users")),
-                new DirectoryInfo(Path.Combine(root.Parent.FullName,"Certificates","Server")),
-                root
+                _local.ClientCertificates,
+                _local.ServerCertificates,
+                _root
             };
-            for (int i = paths.Count - 1; i >= 0; i--)
-            {
-                //System.Diagnostics.Debug.WriteLine(paths[i].FullName);
-                {
-                    if (paths[i].Exists == false)
-                    {
-                        paths.RemoveAt(i);
-                    }
-                }
-            }
+
             foreach (var path in paths)
             {
                 var certificate = new FileInfo(Path.Combine(path.FullName, file));
@@ -54,13 +47,13 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 if (certificate.Exists) return certificate;
             }
 
-            return new FileInfo(Path.Combine(root.FullName, file));
+            return new FileInfo(Path.Combine(_root.FullName, file));
         }
         private void AddInlineCertificate(List<string> document, string key, string file)
         {
             document.Add($"<{key}>");
 
-            var keyFile = FindCertificate(root, file);
+            var keyFile = FindCertificate(file);
             System.Diagnostics.Debug.WriteLine(keyFile.FullName);
             using (var sr = new StreamReader(keyFile.FullName))
             {
@@ -84,7 +77,6 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     switch (doInline.Groups["key"].Value)
                     {
                         case "tls-auth":
-                            // I can't figure out why the OpenVPN Android app would not take a fully inlined profile..
                             AddInlineCertificate(inline, doInline);
                             writer.Write($"#{line}\n");
                             break;
@@ -108,7 +100,6 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     writer.Write($"{line}\n");
                 }
             }
-
         }
     }
 }
