@@ -42,18 +42,14 @@ namespace VPNCenter.OpenVPN.PackageConfig
         }
         private static void HandleLine(string line, ref VPNCenterPortConfiguration current, ref string currentName)
         {
-            if (string.IsNullOrWhiteSpace(line))
+            if (string.IsNullOrWhiteSpace(line)) return;
+
+            if (line.StartsWith("[") && line.EndsWith("]"))
             {
                 if (current is not null)
                 {
                     settings.Add(currentName, current);
-                    current = null;
                 }
-                return;
-            }
-
-            if (line.StartsWith("[") && line.EndsWith("]"))
-            {
                 current = new VPNCenterPortConfiguration();
                 currentName = line.Substring(1, line.Length - 2);
             }
