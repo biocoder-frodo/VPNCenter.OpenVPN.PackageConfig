@@ -1,19 +1,9 @@
-﻿using DiskStationManager.SecureShell;
-using Renci.SshNet.Security;
-using System;
-using System.Collections.Generic;
-using System.Drawing.Text;
-using System.IO;
-using System.Linq;
-using System.Net.Http.Headers;
-using System.Security;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+﻿using System.Text.RegularExpressions;
+
 
 namespace VPNCenter.OpenVPN.PackageConfig
 {
-    internal class ConfigParser
+    internal class ServerConfigParser
     {
         private static readonly Regex regexRoute = new Regex(@"^push\s+""route\s+(?<net>\S*)\s+(?<mask>\S*)""\s?$");
         private static readonly Regex regexServer = new Regex(@"^server\s+(?<net>\S*)\s+(?<mask>\S*)\s?$");
@@ -22,8 +12,35 @@ namespace VPNCenter.OpenVPN.PackageConfig
         private List<Route> routes = new List<Route>();
         private int port;
 
-        public ConfigParser(FileInfo path)
+        private List<string> document = new List<string>();
+
+        public void Write(FileInfo output)
         {
+            using (var sw = new StreamWriter(new FileStream(output.FullName, FileMode.Create, FileAccess.ReadWrite, FileShare.None)))
+            {
+                foreach (var line in document)
+                {
+                    sw.Write(line);
+                    sw.Write('\r');
+                }
+            }
+
+        }
+        public ServerConfigParser(FileInfo path, ProtocolPort portDefinition)
+        {
+            using (var sr = new StreamReader(path.FullName))
+            {
+                while (sr.EndOfStream == false) 
+                {
+                    var line = sr.ReadLine();
+                    if (line is not null)
+                        document.Add(line
+                        
+                        .Replace("{port}", $"port {portDefinition.Port}")
+                        .Replace("{proto}", $"proto {(portDefinition.Protocol == Protocol.UDP ? "udp" : "tcp-server")}"));
+                }
+
+            }
             using (var sr = new StreamReader(path.FullName))
             {
                 while (sr.EndOfStream == false)
