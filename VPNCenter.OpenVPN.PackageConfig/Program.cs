@@ -1,15 +1,13 @@
+using System;
 using DiskStationManager.SecureShell;
-using Renci.SshNet;
-using System.Net.Http.Headers;
-using System.Numerics;
 using System.Security.Cryptography;
 
 using static System.Configuration.UserSectionHandler;
 using static VPNCenter.OpenVPN.PackageConfig.Settings;
+using static VPNCenter.OpenVPN.PackageConfig.OpenVPNConfiguration;
 
 namespace VPNCenter.OpenVPN.PackageConfig
 {
-
     internal static class Program
     {
         private static void SetProfile(Queue<string> cmdLine)
@@ -23,55 +21,36 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     switch (option)
                     {
                         case "host":
-                            OpenVPNConfiguration.Profile.OpenVPNServer.Host = cmdLine.Dequeue(); break;
+                            Profile.OpenVPNServer.Host = cmdLine.Dequeue(); break;
                         case "port":
-                            OpenVPNConfiguration.Profile.OpenVPNServer.Port = int.Parse(cmdLine.Dequeue()); break;
+                            Profile.OpenVPNServer.Port = int.Parse(cmdLine.Dequeue()); break;
                         case "user":
-                            OpenVPNConfiguration.Profile.OpenVPNServer.UserName = cmdLine.Dequeue(); break;
+                            Profile.OpenVPNServer.UserName = cmdLine.Dequeue(); break;
                         case "continue":
                             return;
                         case "pass":
-                            var input = OpenVPNConfiguration.Profile.OpenVPNServer.GetOrAddAuthenticationMethod(DSMAuthenticationMethod.Password);
-                            System.Console.WriteLine($"Please enter the password for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}:");
-                            var pass = string.Empty;
-                            ConsoleKey key;
-                            do
-                            {
-                                var keyInfo = Console.ReadKey(intercept: true);
-                                key = keyInfo.Key;
-
-                                if (key == ConsoleKey.Backspace && pass.Length > 0)
-                                {
-                                    Console.Write("\b \b");
-                                    pass = pass[0..^1];
-                                }
-                                else if (!char.IsControl(keyInfo.KeyChar))
-                                {
-                                    Console.Write("*");
-                                    pass += keyInfo.KeyChar;
-                                }
-                            } while (key != ConsoleKey.Enter);
-                            Console.WriteLine();
-                            input.Password = pass; 
+                            var input = Profile.OpenVPNServer.GetOrAddAuthenticationMethod(DSMAuthenticationMethod.Password);
+                            Console.WriteLine($"Please enter the password for {Profile.OpenVPNServer.UserName}:");
+                            input.setPassword(DpApiString.SecureStringFromConsole());
                             break;
                         case "reset":
-                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.None);
-                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.KeyboardInteractive);
-                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.Password);
-                            OpenVPNConfiguration.Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.PrivateKeyFile);
-                            OpenVPNConfiguration.Profile.OpenVPNServer.Port = 22;
-                            OpenVPNConfiguration.Profile.OpenVPNServer.Host = string.Empty;
-                            OpenVPNConfiguration.Profile.OpenVPNServer.UserName = string.Empty;
+                            Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.None);
+                            Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.KeyboardInteractive);
+                            Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.Password);
+                            Profile.OpenVPNServer.RemoveAuthenticationMethod(DSMAuthenticationMethod.PrivateKeyFile);
+                            Profile.OpenVPNServer.Port = 22;
+                            Profile.OpenVPNServer.Host = string.Empty;
+                            Profile.OpenVPNServer.UserName = string.Empty;
                             break;
                         case "list":
-                            System.Console.WriteLine($"Authentication methods in profile for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}@{OpenVPNConfiguration.Profile.OpenVPNServer.Host}:");
-                            foreach (var method in OpenVPNConfiguration.Profile.OpenVPNServer.AuthenticationMethods)
+                            Console.WriteLine($"Authentication methods in profile for {Profile.OpenVPNServer.UserName}@{Profile.OpenVPNServer.Host}:");
+                            foreach (var method in Profile.OpenVPNServer.AuthenticationMethods)
                             {
                                 Console.WriteLine(method.Method);
                             }
                             break;
                         case "save":
-                            OpenVPNConfiguration.Profile.Save();
+                            Profile.Save();
                             break;
                         default:
                             fail = true;
@@ -129,10 +108,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     }
                 }
 
-
-
                 _ = ReadConfiguration(entropy);
-
 
                 PushConfiguration.PushFromProfile(workFolder);
             }
@@ -140,21 +116,16 @@ namespace VPNCenter.OpenVPN.PackageConfig
             {
                 System.Console.WriteLine(ex);
             }
-
-
-
-
         }
         internal static OpenVPNConfiguration ReadConfiguration(string entropy)
         {
-
             WrappedPassword<DSMAuthentication>.SetEntropy(entropy);
             WrappedPassword<DSMAuthenticationKeyFile>.SetEntropy(entropy);
             WrappedPassword<DefaultProxy>.SetEntropy(entropy);
 
-            OpenVPNConfiguration.Initialize(GetSection<OpenVPNConfiguration>);
+            Initialize(GetSection<OpenVPNConfiguration>);
 
-            return OpenVPNConfiguration.Profile;
+            return Profile;
         }
         private static string GetEntropy(string input)
         {
@@ -174,9 +145,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
             {
                 //don't care if it's not a filename
             }
-
             return input;
-
         }
     }
 }

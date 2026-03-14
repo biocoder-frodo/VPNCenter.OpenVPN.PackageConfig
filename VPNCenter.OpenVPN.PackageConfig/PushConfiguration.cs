@@ -1,15 +1,6 @@
-﻿using DiskStationManager.SecureShell;
-using Renci.SshNet;
-using VPNCenter.OpenVPN.PackageConfig;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-using static System.Configuration.UserSectionHandler;
+﻿using System;
+using DiskStationManager.SecureShell;
 using static VPNCenter.OpenVPN.PackageConfig.OpenVPNConfiguration;
-using System.IO;
 
 namespace VPNCenter.OpenVPN.PackageConfig
 {
@@ -29,9 +20,9 @@ namespace VPNCenter.OpenVPN.PackageConfig
             if (serverTemplate.Exists == false) throw new FileNotFoundException($"Expecting ./Templates/openvpn.conf in {workLocation.FullName}");
             if (clientTemplate.Exists == false) throw new FileNotFoundException($"Expecting ./Templates/openvpn.ovpn in {workLocation.FullName}");
 
-            const string appArmour = "/usr/syno/etc.defaults/rc.sysv/apparmor.sh";
 
-            var test = new ConfigParser(serverTemplate);
+
+            //var test = new ConfigParser(serverTemplate);
 
             DSMSession.ConsoleUI = true;
             DSMSession session = new DSMSession(Profile.OpenVPNServer, Session_HostKeyChange);
@@ -39,6 +30,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
             const string varpackages = "/var/packages";
             const string etcpackages = "/usr/syno/etc/packages/" + vpnCenter;
             const string vpnCertificates = "/./vpncerts";
+            const string tlsAuthFile = "ta.key";
             bool ta_created = false;
 
             var tmpFolder = $"~/{BConsoleCommand.GetTempPathName()}";
@@ -48,100 +40,101 @@ namespace VPNCenter.OpenVPN.PackageConfig
             ConsoleFileInfo? mgt = null;
             ConsoleFileInfo? ta_key = null;
 
-            var tlsAuthKey = new FileInfo(Path.Combine(serverCertificatesLocation.FullName, "ta.key"));
+            var tlsAuthKey = new FileInfo(Path.Combine(serverCertificatesLocation.FullName, tlsAuthFile));
 
             session.ClientExecute(sc =>
             {
-                Console.WriteLine($"Starting SSH session for {OpenVPNConfiguration.Profile.OpenVPNServer.UserName}@{OpenVPNConfiguration.Profile.OpenVPNServer.Host} ...");
+                Console.WriteLine($"Starting SSH session for {Profile.OpenVPNServer.UserName}@{Profile.OpenVPNServer.Host} ...");
                 sc.Connect();
                 var console = session.GetConsole(sc);
                 Console.WriteLine($"{OpenVPNConfiguration.Profile.OpenVPNServer.Host}: {console.GetVersionInfo().Version}");
 
                 packageFiles.AddRange(console.GetDirectoryContentsRecursive(sc, varpackages + "/", ".", false)
-                                    .Where(p => p.Folder.StartsWith("/./VPNCenter/")));
+                                    .Where(p => p.Folder.StartsWith($"/./{vpnCenter}/")));
 
                 mgt = packageFiles.SingleOrDefault(f => f.FileName.Contains("start-stop-status"));
 
                 if (mgt != null)
                 {
                     etcFiles.AddRange(console.GetDirectoryContentsRecursive(sc, etcpackages + "/"));
-                    ta_key = etcFiles.SingleOrDefault(f => f.FileName.Contains("ta.key"));
+                    ta_key = etcFiles.SingleOrDefault(f => f.FileName.Contains(tlsAuthFile));
                 }
             });
 
             if (mgt is null)
             {
-                System.Console.WriteLine("VPNCenter is not installed?");
+                Console.WriteLine("VPNCenter is not installed?");
                 return;
             }
 
-            //session.DownloadFile($"{tmpFolder}/etc/openvpn/openvpn.conf", out MemoryStream vpnConfig);
-            //var serverConfig = new StreamReader(vpnConfig).ReadToEnd();
-            //vpnConfig.Dispose();
 
+            bool appArmorStopped = false;
+            var cleanup = ScriptBuffer.Create()
+                .ChangeToHomeDirectory()
+                .Add($"rm -r {tmpFolder}");
+
+            const string fileMode = "0400";
             var checkVPNCenter = new SudoSession(session);
             try
             {
-                Console.WriteLine("Stopping package ...");
-                checkVPNCenter.Run(new string[]
-                {
-                    $"{appArmour} stop",
-                    $"synopkg stop {vpnCenter}"
-                });
+                checkVPNCenter.Run(s => s.SynoPackage(RunVerb.Stop, vpnCenter));
 
-                var createFolders = new List<string>
-                {
-                    $"mkdir {tmpFolder}",
-                    $"chown -R {session.ConnectionInfo.Username} {tmpFolder}"
-                };
+                var createFolders = ScriptBuffer.Create()
+                    .CreateDirectory(tmpFolder)
+                    .ChangeOwner(tmpFolder, session);
+
 
                 if (etcFiles.Where(p => p.Folder.Equals(vpnCertificates)).Any() == false)
                 {
-                    createFolders.Add($"mkdir {etcpackages}{vpnCertificates}");
+                    createFolders.CreateDirectory(etcpackages + vpnCertificates);
                 }
-                checkVPNCenter.Run(createFolders.ToArray());
+
+                checkVPNCenter.Run(createFolders);
 
                 if (ta_key is null)
                 {
+                    appArmorStopped = true;
+
                     Console.WriteLine("Generating new tls-auth key ...");
-                    checkVPNCenter.Run(new string[]
-                    {
-                    $"cd {etcpackages}{vpnCertificates}",
-                 //   $"{appArmour} stop",
-                    $"openvpn --genkey --secret ta.key",
-                    "chmod 0400 ta.key",
-                 //   $"{appArmour} start",
-                    "chmod 0400 ta.key",
-                    });
+
+                    checkVPNCenter.Run(s => s
+                    .ChangeDirectory(etcpackages + vpnCertificates)
+                    .AppArmor(RunVerb.Stop)
+                    .Add($"openvpn --genkey --secret {tlsAuthFile}")
+                    .ChangeFileMode(tlsAuthFile, fileMode)
+                    .AppArmor(RunVerb.Start)
+                    .ChangeFileMode(tlsAuthFile, fileMode));
+
+                    appArmorStopped = false;
+
                     ta_created = true;
                 }
                 if (tlsAuthKey.Exists && ta_created) tlsAuthKey.Delete();
 
-                checkVPNCenter.Run(new string[]
-                {
-                $"cp {etcpackages}{vpnCertificates}/ta.key {tmpFolder}",
-                "cd /var/packages/VPNCenter/target/",
-                "tar -zcf ~/VPNCenter.openvpn.tar.gz etc",
-                $"cd {tmpFolder}",
-                "tar -xf ~/VPNCenter.openvpn.tar.gz",
-                "rm ~/VPNCenter.openvpn.tar.gz",
-                 "cd ~",
-                $"chown -R {session.ConnectionInfo.Username} {tmpFolder}",
-                $"chmod -R 711 {tmpFolder}"
-                });
+                checkVPNCenter.Run(s => s
+                .Copy($"{etcpackages}{vpnCertificates}/{tlsAuthFile}", tmpFolder)
+                .CopyWithZippedTarball("/var/packages/VPNCenter/target/", "etc", "VPNCenter.openvpn.tar.gz", tmpFolder, cleanup)
+                .CopyWithZippedTarball($"{etcpackages}/../", vpnCenter, "usr-syno-etc-packages-VPNCenter.tar.gz", tmpFolder, cleanup)
+                .ChangeToHomeDirectory()
+                .ChangeOwner(tmpFolder, session)
+                .ChangeFileMode(tmpFolder, "711", true)
+                );
 
-                var installFiles = new List<string>();
+                var serverConfig = VPNCenterConfiguration.ReadConfiguration(session, $"{tmpFolder}/{vpnCenter}");
+                var portConfig = serverConfig.PortConfiguration.DestinationPorts.Single();
+
+                var installScript = ScriptBuffer.Create();
+
                 Console.WriteLine("Exchanging certificates ...");
                 session.ClientExecute(cp =>
                 {
                     cp.Connect();
                     foreach (var file in serverCertificatesLocation.GetFiles().Where(f => f.FullName != tlsAuthKey.FullName))
                     {
-                        session.UploadFile(cp, $"{tmpFolder}/{file.Name}", file);
-                        PlaceFile(installFiles, $"{tmpFolder}/{file.Name}", $"{etcpackages}{vpnCertificates}/{file.Name}");
+                        installScript.UploadViaTempFolder(cp, file, tmpFolder, $"{etcpackages}{vpnCertificates}", fileMode);
                     }
-
-                    session.UploadFile(cp, $"{tmpFolder}/etc/openvpn/openvpn.conf.user", serverTemplate);
+                    var test = new ConfigParser(serverTemplate);
+                    DSMSession.UploadFile(cp, $"{tmpFolder}/etc/openvpn/openvpn.conf.user", serverTemplate);
 
                 });
 
@@ -149,47 +142,48 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 {
                     if (ta_created || tlsAuthKey.Exists == false)
                     {
-                        session.DownloadFile(cp, $"{tmpFolder}/ta.key", tlsAuthKey);
+                        session.DownloadFile(cp, $"{tmpFolder}/{tlsAuthFile}", tlsAuthKey);
                     }
                 });
                 Console.WriteLine("Writing server configuration ...");
-                PlaceFile(installFiles, $"{tmpFolder}/etc/openvpn/openvpn.conf.user", $"{etcpackages}/openvpn/openvpn.conf.user");
-                PlaceFile(installFiles, $"{tmpFolder}/etc/openvpn/openvpn.conf.user", $"{etcpackages}/openvpn/openvpn.conf");
+              
+                installScript.CopyFileAndChangeFileMode($"{tmpFolder}/etc/openvpn/openvpn.conf.user", $"{etcpackages}/openvpn/openvpn.conf.user", fileMode);
+                installScript.CopyFileAndChangeFileMode($"{tmpFolder}/etc/openvpn/openvpn.conf.user", $"{etcpackages}/openvpn/openvpn.conf", fileMode);
 
-                installFiles.AddRange(new string[]
-                {
-                    "cd ~",
-                    $"rm -r {tmpFolder}"
-                });
+                checkVPNCenter.Run(installScript);
 
-                checkVPNCenter.Run(installFiles.ToArray());
-                Console.WriteLine("Starting package ...");
-                checkVPNCenter.Run(new string[]
-                {
-                    $"synopkg start {vpnCenter}",
-                    "cat /var/log/openvpn.log"
-                });
+                checkVPNCenter.Run(s => s
+                        .SynoPackage(RunVerb.Start, vpnCenter)
+                        .Add("cat /var/log/openvpn.log"));
+
                 Console.WriteLine("Writing client profiles ...");
                 foreach (var file in clientCertificatesLocation.GetFiles().Where(cert => cert.Extension == ".crt"))
                 {
                     string user = Path.GetFileNameWithoutExtension(file.FullName);
-                    var inline = new ClientConfigParser(clientTemplate, user);
+                    var inline = new ClientConfigParser(clientTemplate, user, portConfig);
                     using (var sw = new StreamWriter(Path.Combine(workLocation.FullName, $"{user}.ovpn")))
                     {
                         inline.RenderInline(sw);
-                    };
+                    }
+                    ;
                 }
             }
             catch (Exception ex)
             {
-                System.Console.WriteLine(ex);
-                checkVPNCenter.Run($"{appArmour} start");
+                Console.WriteLine(ex);
+
             }
-        }
-        private static void PlaceFile(List<string> script, string source, string destination)
-        {
-            script.Add($"cp {source} {destination}");
-            script.Add($"chmod 0400 {destination}");
+            finally
+            {
+                if (appArmorStopped)
+                {
+                    Console.WriteLine("Starting App Armor ...");
+                    checkVPNCenter.Run(s => s.AppArmor(RunVerb.Start));
+                }
+
+                Console.WriteLine("Performing cleanup ...");
+                checkVPNCenter.Run(cleanup);
+            }
         }
 
         private static void Session_HostKeyChange(object? sender, EventArgs e)
@@ -197,8 +191,5 @@ namespace VPNCenter.OpenVPN.PackageConfig
             System.Diagnostics.Debug.WriteLine("Host Key changed");
             OpenVPNConfiguration.Profile.Save();
         }
-
     }
-
-
 }

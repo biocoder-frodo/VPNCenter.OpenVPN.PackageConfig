@@ -11,8 +11,8 @@ namespace VPNCenter.OpenVPN.PackageConfig
 {
     public class OpenVPNConfiguration : ConfigurationSection
     {
-        private static OpenVPNConfiguration _default_instance = null;
-        private static Func<OpenVPNConfiguration> _load_method = null;
+        private static OpenVPNConfiguration? _default_instance = null;
+        private static Func<OpenVPNConfiguration>? _load_method = null;
         private readonly static object _thread = new object();
         private static int _save_count = 0;
         public static void Initialize(Func<OpenVPNConfiguration> method)
