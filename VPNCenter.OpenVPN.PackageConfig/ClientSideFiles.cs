@@ -1,7 +1,8 @@
 ﻿namespace VPNCenter.OpenVPN.PackageConfig
 {
     internal class ClientSideFiles
-    {
+    {    
+        public string Extension { get; }
         public DirectoryInfo Root { get; }
         public DirectoryInfo ServerCertificates { get; }
         public DirectoryInfo ClientCertificates { get; }
@@ -13,12 +14,13 @@
         public ClientSideFiles(DirectoryInfo workLocation)
         {
             Root = CheckFolder(workLocation);
-            ServerConfigurationUser = CheckFile(Root, "openvpn.conf.user", false);
+            ServerConfigurationUser = CheckFile(Root, PushConfiguration.openvpn_conf_user, false);
             ServerCertificates = CheckFolder(workLocation, "Certificates", "Server");
             ClientCertificates = CheckFolder(workLocation, "Certificates", "Users");
             var templates = CheckFolder(workLocation, "Templates");
-            ServerTemplateConfiguration = CheckFile(templates, "openvpn.conf");
-            ClientTemplateConfiguration = CheckFile(templates, "openvpn.ovpn");
+            ServerTemplateConfiguration = CheckFile(templates, PushConfiguration.openvpn_conf);
+            ClientTemplateConfiguration = CheckFile(templates, PushConfiguration.openvpn_ovpn);
+            Extension = Path.GetExtension(PushConfiguration.openvpn_ovpn);
         }
         private DirectoryInfo CheckFolder(DirectoryInfo root, params string[] subFolder)
         {
