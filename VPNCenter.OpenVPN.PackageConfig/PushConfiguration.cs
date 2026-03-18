@@ -42,7 +42,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
 
             var local = new ClientSideFiles(workLocation);
-            
+
             bool ta_created = false;
 
             var tmpFolder = $"~/{BConsoleCommand.GetTempPathName()}";
@@ -144,6 +144,15 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 DebugDownload(session, filesFrom_usr);
 
                 var serverConfig = VPNCenterConfiguration.PrepareConfiguration(local, session, $"{tmpFolder}/{vpnCenter}");
+                Console.WriteLine($"IPv6 enabled             : {(serverConfig.IPv6Enabled ? "yes" : "no")}");
+                Console.WriteLine($"LAN access enabled       : {(serverConfig.LANAccessEnabled ? "yes" : "no")}");
+                Console.WriteLine($"OpenVPN enabled          : {(serverConfig.ProtocolEnabled ? "yes" : "no")}");
+                Console.WriteLine($"Maximum #clients         : {serverConfig.MaxClients}");
+                Console.WriteLine($"Maximum #connections/user: {serverConfig.MaxAuthenticatedConnections}");
+                if (serverConfig.PortConfigurationAvailable)
+                {
+                    Console.WriteLine($"Incoming traffic         : {serverConfig.PortConfiguration}");
+                }
 
                 var installScript = ScriptBuffer.Create();
 
