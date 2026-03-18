@@ -4,7 +4,7 @@ using System.IO;
 
 namespace VPNCenter.OpenVPN.PackageConfig
 {
-    internal static class Extensions
+    internal static partial class Extensions
     {
         private static readonly string appArmor = "/usr/syno/etc.defaults/rc.sysv/apparmor.sh";
         private static readonly Dictionary<RunVerb, string> verbs = Enum.GetValues<RunVerb>().ToDictionary(k => k, v => v.ToString().ToLower());
