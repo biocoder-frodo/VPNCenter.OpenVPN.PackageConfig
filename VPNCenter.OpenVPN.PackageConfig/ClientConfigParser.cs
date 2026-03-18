@@ -21,7 +21,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     config.Add(sr.ReadLine()
                         .Replace("{user}", userName)
                         .Replace("{port}", portDefinition.Port.ToString())
-                        .Replace("{proto}", $"proto {(portDefinition.Protocol == Protocol.UDP ? "udp":"tcp-client")}")
+                        .KeywordReplace("proto", portDefinition.ProtoName())
                         );
                 }
             }

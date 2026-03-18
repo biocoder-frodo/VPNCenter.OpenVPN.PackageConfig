@@ -1,6 +1,5 @@
 ﻿using System.Text.RegularExpressions;
 
-
 namespace VPNCenter.OpenVPN.PackageConfig
 {
     internal class ServerConfigParser
@@ -8,12 +7,20 @@ namespace VPNCenter.OpenVPN.PackageConfig
         private static readonly Regex regexRoute = new Regex(@"^push\s+""route\s+(?<net>\S*)\s+(?<mask>\S*)""\s?$");
         private static readonly Regex regexServer = new Regex(@"^server\s+(?<net>\S*)\s+(?<mask>\S*)\s?$");
         private static readonly Regex regexPort = new Regex(@"^port\s+(?<port>[0-9]+)\s?$");
-        private Route server;
-        private List<Route> routes = new List<Route>();
-        private int port;
+        private static readonly Regex regexMaxClients = new Regex(@"^max-clients\s+(?<count>[0-9]+)\s?$");
+        private readonly Routes routes = new Routes();
+
+        private int? Port;
 
         private List<string> document = new List<string>();
 
+        private static readonly Dictionary<Regex, Action<VPNCenterConfiguration, ServerConfigParser, Match>> parsing = new Dictionary<Regex, Action<VPNCenterConfiguration, ServerConfigParser, Match>>()
+        {
+            { regexServer,     (c,p,m)=>  p.routes.AddServerSubnet(new Route( m.Groups["net"].Value, m.Groups["mask"].Value)) },
+            { regexRoute,      (c,p,m)=>  p.routes.Add(new Route( m.Groups["net"].Value, m.Groups["mask"].Value)) },
+            { regexPort,       (c,p,m)=>  p.Port = int.Parse(m.Groups["port"].Value) },
+            { regexMaxClients, (c,p,m)=>  c.MaxClients = int.Parse(m.Groups["count"].Value) }
+        };
         public void Write(FileInfo output)
         {
             using (var sw = new StreamWriter(new FileStream(output.FullName, FileMode.Create, FileAccess.ReadWrite, FileShare.None)))
@@ -21,50 +28,66 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 foreach (var line in document)
                 {
                     sw.Write(line);
-                    sw.Write('\r');
+                    sw.Write('\n');
                 }
             }
-
         }
-        public ServerConfigParser(FileInfo path, ProtocolPort portDefinition)
+        public ServerConfigParser(VPNCenterConfiguration configuration, ProtocolPort portDefinition, FileInfo file, ServerConfigParser? withValues = null)
         {
-            using (var sr = new StreamReader(path.FullName))
+            using (var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.None))
             {
-                while (sr.EndOfStream == false) 
-                {
-                    var line = sr.ReadLine();
-                    if (line is not null)
-                        document.Add(line
-                        
-                        .Replace("{port}", $"port {portDefinition.Port}")
-                        .Replace("{proto}", $"proto {(portDefinition.Protocol == Protocol.UDP ? "udp" : "tcp-server")}"));
-                }
-
+                ReadContents(configuration, portDefinition, fs, withValues);
             }
-            using (var sr = new StreamReader(path.FullName))
+        }
+        public ServerConfigParser(VPNCenterConfiguration configuration, ProtocolPort portDefinition, Stream stream)
+        {
+            ReadContents(configuration, portDefinition, stream);
+        }
+        private void ReadContents(VPNCenterConfiguration configuration, ProtocolPort portDefinition, Stream stream, ServerConfigParser? withValues = null)
+        {
+            using (var sr = new StreamReader(stream))
             {
                 while (sr.EndOfStream == false)
                 {
-                    string line = sr.ReadLine();
-                    var isServer = regexServer.Match(line);
-                    var isRoute = regexRoute.Match(line);
-                    var isPort = regexPort.Match(line);
+                    var line = sr.ReadLine();
+                    if (line is not null)
+                    {
 
-                    if (isServer.Success)
-                    {
-                        server = new Route() { Network = isServer.Groups["net"].Value, NetMask = isServer.Groups["mask"].Value };
-                    }
-                    if (isRoute.Success)
-                    {
-                        routes.Add(new Route() { Network = isRoute.Groups["net"].Value, NetMask = isRoute.Groups["mask"].Value });
-                    }
-                    if (isPort.Success)
-                    {
-                        port = int.Parse(isPort.Groups["port"].Value);
+                        line.KeywordReplace("port", portDefinition.Port);
+                        line.KeywordReplace("proto", portDefinition.ProtoName(configuration));
+                        line.KeywordReplace("max-clients", configuration.MaxClients);
+
+                        if (withValues is null)
+                        {
+                            document.Add(line);
+                        }
+                        else
+                        {
+                            if (line.Trim() == "{server}")
+                            {
+                                document.Add(withValues.routes.Server.ToString());
+                            }
+                            else if (line.Trim() == "{routes}")
+                            {
+                                foreach (var route in withValues.routes)
+                                {
+                                    document.Add($@"push ""{route.Value}""");
+                                }
+                            }
+                            else
+                            {
+                                document.Add(line);
+                            }
+                        }
+
+                        foreach (var pair in parsing)
+                        {
+                            Match m = pair.Key.Match(line);
+                            if (m.Success) pair.Value(configuration, this, m);
+                        }
                     }
                 }
             }
-
         }
     }
 }
