@@ -1,17 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+﻿using System.Text.RegularExpressions;
 
 namespace VPNCenter.OpenVPN.PackageConfig
 {
     internal class VPNCenterPortConfiguration
     {
-        private static Regex regexParamValue = new Regex(@"(?<param>(\w|\.)+)=""(?<value>.*?)""", RegexOptions.Compiled);
+        private static Regex regexParamValue = new Regex(@"(?<param>(\w|\.)+)=""?(?<value>.*)""?", RegexOptions.Compiled);
         private static Regex regexPorts = new Regex(@"(?<ports>(\d+,)*(\d+))\/(?<proto>(udp|tcp))", RegexOptions.Compiled);
         private static Dictionary<string, VPNCenterPortConfiguration> settings = new Dictionary<string, VPNCenterPortConfiguration>();
         public string? Title { get; private set; }
@@ -23,6 +16,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
         {
             VPNCenterPortConfiguration? current = null;
             string currentName = string.Empty;
+
             using (var sr = new StreamReader(stream))
             {
                 while (sr.EndOfStream == false)
@@ -30,9 +24,37 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     var line = sr.ReadLine();
                     if (line is not null)
                     {
-                        HandleLine(line, ref current, ref currentName);
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+
+                        if (line.StartsWith("[") && line.EndsWith("]"))
+                        {
+                            if (current is not null)
+                            {
+                                settings.Add(currentName, current);
+                            }
+                            current = new VPNCenterPortConfiguration();
+                            currentName = line.Substring(1, line.Length - 2);
+                        }
+
+                        if (current is not null)
+                        {
+                            var match = regexParamValue.Match(line);
+                            if (match.Success)
+                            {
+                                string value = match.Groups["value"].Value;
+                                switch (match.Groups["param"].Value)
+                                {
+                                    case "title": current.Title = value; break;
+                                    case "desc": current.Description = value; break;
+                                    case "port_forward": current.PortForward = value == "yes"; break;
+                                    case "dst.ports": current.DestinationPorts = ParsePorts(value); break;
+                                    default: break;
+                                }
+                            }
+                        }
                     }
                 }
+
                 if (current is not null)
                 {
                     settings.Add(currentName, current);
@@ -40,36 +62,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
             }
             return settings;
         }
-        private static void HandleLine(string line, ref VPNCenterPortConfiguration current, ref string currentName)
-        {
-            if (string.IsNullOrWhiteSpace(line)) return;
 
-            if (line.StartsWith("[") && line.EndsWith("]"))
-            {
-                if (current is not null)
-                {
-                    settings.Add(currentName, current);
-                }
-                current = new VPNCenterPortConfiguration();
-                currentName = line.Substring(1, line.Length - 2);
-            }
-            else if (current is not null)
-            {
-                var match = regexParamValue.Match(line);
-                if (match.Success)
-                {
-                    string value = match.Groups["value"].Value;
-                    switch (match.Groups["param"].Value)
-                    {
-                        case "title": current.Title = value; break;
-                        case "desc": current.Description = value; break;
-                        case "port_forward": current.PortForward = value == "yes"; break;
-                        case "dst.ports": current.DestinationPorts = ParsePorts(value); break;
-                        default: break;
-                    }
-                }
-            }
-        }
         private static IReadOnlyList<ProtocolPort> ParsePorts(string value)
         {
             var match = regexPorts.Match(value);
