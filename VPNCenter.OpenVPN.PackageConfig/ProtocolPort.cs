@@ -1,18 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace VPNCenter.OpenVPN.PackageConfig
+﻿namespace VPNCenter.OpenVPN.PackageConfig
 {
-    enum Protocol
-    {
-        UDP,
-        TCP,
-    }
     internal class ProtocolPort
     {
+        private static string[] _label = Enum.GetNames(typeof(Protocol)).Select(s => "/" + s.ToLower()).ToArray();
         public Protocol Protocol { get; }
         public int Port { get; }
 
@@ -21,5 +11,6 @@ namespace VPNCenter.OpenVPN.PackageConfig
             Port = int.Parse(port);
             Protocol = Enum.Parse<Protocol>(proto, true);
         }
+        public override string ToString() => $"{Port}{_label[(int)Protocol]}";
     }
 }
