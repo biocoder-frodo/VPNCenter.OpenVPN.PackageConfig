@@ -1,16 +1,17 @@
 ﻿using DiskStationManager.SecureShell;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.ComponentModel;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace VPNCenter.OpenVPN.PackageConfig
 {
     internal class VPNCenterConfiguration
     {
         private const string configName = "vpn_server_openvpn";
-        public ProtocolPort PortConfiguration => PortConfigurationAvailable ?_portConfiguration[configName].DestinationPorts.SingleOrDefault() : null;
+
+        private static readonly Dictionary<string, PropertyInfo> properties = typeof(VPNCenterConfiguration).GetProperties().ToDictionary(k => k.Name, v => v);
+
+        public ProtocolPort PortConfiguration => PortConfigurationAvailable ? _portConfiguration[configName].DestinationPorts.SingleOrDefault() : null;
         public bool PortConfigurationAvailable =>
             _portConfiguration.ContainsKey(configName) && _portConfiguration[configName].DestinationPorts is not null
             && _portConfiguration[configName].DestinationPorts.Count == 1;
@@ -18,12 +19,23 @@ namespace VPNCenter.OpenVPN.PackageConfig
         private readonly Dictionary<string, VPNCenterPortConfiguration> _portConfiguration;
         private readonly Dictionary<string, string> _confValues = new Dictionary<string, string>();
 
-        public bool ProtocolEnabled => _confValues.ContainsKey("runopenvpn") ? _confValues["runopenvpn"] == "yes" ? true : false : false;
-        public bool LANAccessEnabled => _confValues.ContainsKey("openvpn_push_route") ? _confValues["openvpn_push_route"] == "yes" ? true : false : false;
-        public bool IPv6Enabled => _confValues.ContainsKey("ovpn_enable_ipv6") ? _confValues["ovpn_enable_ipv6"] == "yes" ? true : false : false;
-        public int MaxAuthenticatedConnections => _confValues.ContainsKey("ovpn_auth_conn") ? int.Parse(_confValues["ovpn_auth_conn"]) : -1;
+        [SynoVpnConfParameter("runopenvpn")]
+        public bool ProtocolEnabled => GetSynoVpnConfValueYesNo();
+
+        [SynoVpnConfParameter("openvpn_push_route")]
+        public bool LANAccessEnabled => GetSynoVpnConfValueYesNo();
+
+        [SynoVpnConfParameter("ovpn_enable_ipv6")]
+        public bool IPv6Enabled => GetSynoVpnConfValueYesNo();
+
+        [SynoVpnConfParameter("ovpn_auth_conn")]
+        public int MaxAuthenticatedConnections => GetSynoVpnConfValue(-1);
+
+        // from the openvpn server configuration file
         public int? MaxClients { get; set; }
+
         public static VPNCenterConfiguration PrepareConfiguration(ClientSideFiles local, DSMSession session, string path) => new VPNCenterConfiguration(local, session, path);
+
         private VPNCenterConfiguration(ClientSideFiles local, DSMSession session, string path)
         {
             using (var stream = session.DownloadFile($"{path}/synovpn_port"))
@@ -64,5 +76,55 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 }
             }
         }
+
+        #region property helpers
+        private string? GetSynoVpnConfValueAttribute(string? property)
+        {
+            if (property is null) return null;
+            if (properties.ContainsKey(property) == false) return null;
+            var prop = properties[property];
+            var attribute = prop.GetCustomAttribute<SynoVpnConfParameterAttribute>();
+            if (attribute == null) return null;
+            return attribute.Name;
+        }
+        public bool GetSynoVpnConfValueYesNo([CallerMemberName] string property = null)
+        {
+            return GetSynoVpnConfValue(s => s == "yes");
+        }
+        public int GetSynoVpnConfValue(int defaultValue, [CallerMemberName] string property = null)
+        {
+            return GetSynoVpnConfValue(s => { if (int.TryParse(s, out int v)) return v; return defaultValue; }, defaultValue, property);
+        }
+        public S GetSynoVpnConfValue<S>(Func<string, S> parseFunc, S defaultValue, [CallerMemberName] string property = null) where S : struct
+        {
+            S? value = GetSynoVpnConfValueNullable(parseFunc, property);
+            return value.HasValue ? value.Value : defaultValue;
+        }
+        public S GetSynoVpnConfValue<S>(Func<string, S> parseFunc, [CallerMemberName] string property = null) where S : struct
+        {
+            S? value = GetSynoVpnConfValueNullable(parseFunc, property);
+            return value.HasValue ? value.Value : default;
+        }
+        public S? GetSynoVpnConfValueNullable<S>(Func<string, S> parseFunc, [CallerMemberName] string property = null) where S : struct
+        {
+            string? name = GetSynoVpnConfValueAttribute(property);
+            if (name is null) return null;
+            if (_confValues.ContainsKey(name))
+            {
+                return parseFunc(_confValues[name]);
+            }
+            return null;
+        }
+        public S? GetSynoVpnConfValueNullable<S>(Func<string, S?> parseFunc, [CallerMemberName] string property = null) where S : struct
+        {
+            string? name = GetSynoVpnConfValueAttribute(property);
+            if (name is null) return null;
+            if (_confValues.ContainsKey(name))
+            {
+                return parseFunc(_confValues[name]);
+            }
+            return null;
+        }
+        #endregion
     }
 }
