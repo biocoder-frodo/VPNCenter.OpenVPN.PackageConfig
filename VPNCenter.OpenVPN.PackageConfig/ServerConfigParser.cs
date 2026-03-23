@@ -53,9 +53,10 @@ namespace VPNCenter.OpenVPN.PackageConfig
                     if (line is not null)
                     {
 
-                        line.KeywordReplace("port", portDefinition.Port);
-                        line.KeywordReplace("proto", portDefinition.ProtoName(configuration));
-                        line.KeywordReplace("max-clients", configuration.MaxClients);
+                        line = line
+                            .KeywordReplace("port", portDefinition.Port)
+                            .KeywordReplace("proto", portDefinition.ProtoName(configuration))
+                            .KeywordReplace("max-clients", configuration.MaxClients);
 
                         if (withValues is null)
                         {

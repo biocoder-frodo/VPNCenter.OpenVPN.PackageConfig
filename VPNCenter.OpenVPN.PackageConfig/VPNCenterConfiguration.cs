@@ -12,11 +12,14 @@ namespace VPNCenter.OpenVPN.PackageConfig
         private static readonly Dictionary<string, PropertyInfo> properties = typeof(VPNCenterConfiguration).GetProperties().ToDictionary(k => k.Name, v => v);
 
         public ProtocolPort PortConfiguration => PortConfigurationAvailable ? _portConfiguration[configName].DestinationPorts.SingleOrDefault() : null;
-        public bool PortConfigurationAvailable =>
-            _portConfiguration.ContainsKey(configName) && _portConfiguration[configName].DestinationPorts is not null
-            && _portConfiguration[configName].DestinationPorts.Count == 1;
+        public bool PortConfigurationAvailable => IsAvailable(_portConfiguration, configName);
 
         private readonly Dictionary<string, VPNCenterPortConfiguration> _portConfiguration;
+        private static bool IsAvailable(Dictionary<string, VPNCenterPortConfiguration> config, string name)
+        {
+            return config.ContainsKey(name) && config[name].DestinationPorts is not null
+             && config[name].DestinationPorts.Count == 1;
+        }
         private readonly Dictionary<string, string> _confValues = new Dictionary<string, string>();
 
         [SynoVpnConfParameter("runopenvpn")]
@@ -30,6 +33,10 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
         [SynoVpnConfParameter("ovpn_auth_conn")]
         public int MaxAuthenticatedConnections => GetSynoVpnConfValue(-1);
+
+        [SynoVpnConfParameter("vpninterface")]
+        public string Interface => GetSynoVpnConfValue("n/a");
+
 
         // from the openvpn server configuration file
         public int? MaxClients { get; set; }
@@ -89,7 +96,12 @@ namespace VPNCenter.OpenVPN.PackageConfig
         }
         public bool GetSynoVpnConfValueYesNo([CallerMemberName] string property = null)
         {
-            return GetSynoVpnConfValue(s => s == "yes");
+            return GetSynoVpnConfValue(s => s == "yes", property);
+        }
+        public string GetSynoVpnConfValue(string defaultValue, [CallerMemberName] string property = null)
+        {
+            var result = GetSynoVpnConfValueAttribute(property);
+            return (result is null) ? defaultValue : _confValues[result];
         }
         public int GetSynoVpnConfValue(int defaultValue, [CallerMemberName] string property = null)
         {

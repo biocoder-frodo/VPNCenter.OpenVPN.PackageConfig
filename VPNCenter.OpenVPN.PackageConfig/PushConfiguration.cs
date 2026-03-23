@@ -36,7 +36,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
             const string usrSynoEtcPackages = "/usr/syno/etc/packages/";
             const string usrSynoEtcPackagesPackage = $"/usr/syno/etc/packages/{vpnCenter}";
             const string vpnCertificates = "/./vpncerts";
-            const string filesFrom_var = "VPNCenter.openvpn.tar.gz";
+            const string filesFrom_var = "var-packages-VPNCenter-target.tar.gz";
             const string filesFrom_usr = "usr-syno-etc-packages-VPNCenter.tar.gz";
             const string tlsAuthFile = "ta.key";
 
@@ -144,6 +144,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
                 DebugDownload(session, filesFrom_usr);
 
                 var serverConfig = VPNCenterConfiguration.PrepareConfiguration(local, session, $"{tmpFolder}/{vpnCenter}");
+                Console.WriteLine($"Interface                : {serverConfig.Interface}");
                 Console.WriteLine($"IPv6 enabled             : {(serverConfig.IPv6Enabled ? "yes" : "no")}");
                 Console.WriteLine($"LAN access enabled       : {(serverConfig.LANAccessEnabled ? "yes" : "no")}");
                 Console.WriteLine($"OpenVPN enabled          : {(serverConfig.ProtocolEnabled ? "yes" : "no")}");
@@ -210,6 +211,8 @@ namespace VPNCenter.OpenVPN.PackageConfig
 
                 Console.WriteLine("Performing cleanup ...");
                 checkVPNCenter.Run(cleanup);
+
+                if (local.ServerConfigurationUser.Exists) local.ServerConfigurationUser.Delete();
             }
         }
     }
