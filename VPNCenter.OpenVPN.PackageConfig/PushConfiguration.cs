@@ -34,7 +34,7 @@ namespace VPNCenter.OpenVPN.PackageConfig
             const string varpackages = "/var/packages";
             const string varPackagesPackageTarget = $"{varpackages}/{vpnCenter}/target/";
             const string usrSynoEtcPackages = "/usr/syno/etc/packages/";
-            const string usrSynoEtcPackagesPackage = $"/usr/syno/etc/packages/{vpnCenter}";
+            const string usrSynoEtcPackagesPackage = $"{usrSynoEtcPackages}{vpnCenter}";
             const string vpnCertificates = "/./vpncerts";
             const string filesFrom_var = "var-packages-VPNCenter-target.tar.gz";
             const string filesFrom_usr = "usr-syno-etc-packages-VPNCenter.tar.gz";
